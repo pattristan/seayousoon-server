@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sea You Soon — Crew Deck</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">⚓ Sea You Soon</a>
+        {% if request.session.get('username') %}
+        <a href="/logout" class="logout">Log out</a>
+        {% endif %}
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <footer>Crew Deck · free for crew</footer>
+</body>
+</html>

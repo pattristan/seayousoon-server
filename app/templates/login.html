@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Welcome aboard</h1>
+<p class="lede">Log in to create a code your family can use to follow your ship.</p>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<form method="post" action="/login">
+    <label>Username
+        <input name="username" placeholder="e.g. patrick.sol" autocapitalize="off" required>
+    </label>
+    <label>PIN
+        <input name="pin" type="password" inputmode="numeric" required>
+    </label>
+    <button type="submit">Log in</button>
+</form>
+
+<p class="alt">New here? <a href="/register">Create your account</a></p>
+{% endblock %}

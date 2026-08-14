@@ -1,0 +1,10 @@
+# Caddy reverse proxy — gives the backend HTTPS automatically (Let's Encrypt,
+# zero certificate maintenance). Install to /etc/caddy/Caddyfile and reload:
+#
+#   sudo systemctl reload caddy
+#
+# Replace the domain with the subdomain you point at this server.
+
+crew.oconnell-connect.de {
+    reverse_proxy 127.0.0.1:8000
+}

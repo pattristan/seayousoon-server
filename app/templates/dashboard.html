@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Hi {{ crew["name"] }} 👋</h1>
+<p class="lede">{{ crew["ship"] }} · {{ crew["embark_date"] }} → {{ crew["disembark_date"] }}</p>
+
+<section class="card">
+    <h2>Share a code with your family</h2>
+    <p>Generate a code, then send it to one family member (WhatsApp, text, in person).
+       Each code works once and expires in 7 days.</p>
+    <form method="post" action="/generate-code">
+        <button type="submit">Generate a new code</button>
+    </form>
+
+    {% if codes %}
+    <h3>Unused codes</h3>
+    <ul class="codes">
+        {% for c in codes %}
+        <li class="code-entry">
+            <div>
+                <span class="code">{{ c["code"] }}</span>
+                <span class="muted">expires {{ c["expires_at"][:10] }}</span>
+            </div>
+            <img class="qr" src="{{ qrs[c['code']] }}" alt="QR code for {{ c['code'] }}">
+            <p class="muted small">Let your loved one scan this with their iPhone camera —
+               it opens Sea You Soon with the code filled in.</p>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Who's following you</h2>
+    {% if links %}
+    <ul class="links">
+        {% for l in links %}
+        <li>
+            <span>{{ l["watcher_name"] }}</span>
+            <form method="post" action="/revoke" class="inline">
+                <input type="hidden" name="watch_id" value="{{ l['watch_id'] }}">
+                <button type="submit" class="danger">Remove</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No one yet. Generate a code above and share it.</p>
+    {% endif %}
+</section>
+{% endblock %}

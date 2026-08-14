@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>You've been invited 💙</h1>
+<p class="lede">Someone at sea wants you to follow their voyage.</p>
+
+{% if status == "valid" %}
+<section class="card center">
+    <p>Your pairing code:</p>
+    <p class="code big">{{ code }}</p>
+
+    <a class="button" href="seayousoon://redeem?code={{ code }}">Open in Sea You Soon</a>
+
+    <p class="muted">If nothing happens, you don't have the app yet.
+       Install <strong>Sea You Soon</strong> from the App Store, open it, choose
+       <em>“Follow someone”</em> and type the code above.</p>
+</section>
+{% elif status == "used" %}
+<section class="card center">
+    <p class="error">This code has already been used.</p>
+    <p class="muted">Ask your seafarer to create a fresh code — each one works only once.</p>
+</section>
+{% elif status == "expired" %}
+<section class="card center">
+    <p class="error">This code has expired.</p>
+    <p class="muted">Codes are valid for 7 days. Ask your seafarer for a new one.</p>
+</section>
+{% else %}
+<section class="card center">
+    <p class="error">This code isn't recognised.</p>
+    <p class="muted">Check the link, or ask your seafarer to create a new code.</p>
+</section>
+{% endif %}
+{% endblock %}

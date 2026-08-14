@@ -1,0 +1,22 @@
+# systemd unit — keeps the Sea You Soon backend running and restarts it on
+# crashes/reboots. Install to /etc/systemd/system/seayousoon.service
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now seayousoon
+
+[Unit]
+Description=Sea You Soon — Crew Deck + Pairing API
+After=network.target
+
+[Service]
+User=seayousoon
+WorkingDirectory=/home/seayousoon/seayousoon-server
+Environment=SEAYOUSOON_DB=/home/seayousoon/data/data.db
+# Set a real random secret before first start:  openssl rand -hex 32
+Environment=SEAYOUSOON_SECRET=CHANGE-ME
+ExecStart=/home/seayousoon/seayousoon-server/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
