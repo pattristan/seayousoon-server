@@ -20,6 +20,8 @@ import hashlib
 import os
 import secrets
 import sqlite3
+
+import bcrypt
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -87,17 +89,33 @@ def init_db():
 
 
 # ---------------------------------------------------------------------------
-# PIN hashing (salted SHA-256 — adequate for a short numeric PIN gate)
+# PIN hashing — bcrypt (salt lives inside the hash; pin_salt stays "" for new
+# rows). Legacy salted-SHA-256 rows still verify and are upgraded on the next
+# successful login via set_pin() (see needs_rehash).
 # ---------------------------------------------------------------------------
-def hash_pin(pin: str, salt: str | None = None) -> tuple[str, str]:
-    salt = salt or secrets.token_hex(16)
-    digest = hashlib.sha256((salt + pin).encode()).hexdigest()
-    return digest, salt
+def hash_pin(pin: str) -> tuple[str, str]:
+    digest = bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
+    return digest, ""
 
 
 def verify_pin(pin: str, pin_hash: str, salt: str) -> bool:
-    candidate, _ = hash_pin(pin, salt)
-    return secrets.compare_digest(candidate, pin_hash)
+    if pin_hash.startswith("$2"):
+        return bcrypt.checkpw(pin.encode(), pin_hash.encode())
+    legacy = hashlib.sha256((salt + pin).encode()).hexdigest()
+    return secrets.compare_digest(legacy, pin_hash)
+
+
+def needs_rehash(pin_hash: str) -> bool:
+    return not pin_hash.startswith("$2")
+
+
+def set_pin(username: str, pin: str):
+    pin_hash, pin_salt = hash_pin(pin)
+    with connect() as conn:
+        conn.execute(
+            "UPDATE crew SET pin_hash = ?, pin_salt = ? WHERE username = ?",
+            (pin_hash, pin_salt, username),
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import db
+from . import db, security
 from .codes import SHIPS, generate_code, valid_username
 
 BASE_DIR = os.path.dirname(__file__)
@@ -39,6 +39,9 @@ app = FastAPI(title="Sea You Soon — Crew Deck")
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.environ.get("SEAYOUSOON_SECRET", "dev-secret-change-me"),
+    max_age=14 * 24 * 3600,
+    https_only=True,
+    same_site="lax",
 )
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
@@ -90,7 +93,9 @@ def register(
 ):
     username = username.strip().lower()
     error = None
-    if not valid_username(username):
+    if not security.allow_register(security.client_ip(request)):
+        error = security.LOGIN_ERROR
+    elif not valid_username(username):
         error = "Username: 3–20 characters, letters/numbers/. _ - only."
     elif len(pin.strip()) < 4:
         error = "Please choose a PIN of at least 4 digits."
@@ -109,11 +114,17 @@ def register(
 @app.post("/login", response_class=HTMLResponse)
 def login(request: Request, username: str = Form(...), pin: str = Form(...)):
     username = username.strip().lower()
+    if not security.allow_login(security.client_ip(request), username):
+        return templates.TemplateResponse(
+            request, "login.html", {"error": security.LOGIN_ERROR}
+        )
     row = db.get_crew(username)
     if not row or not db.verify_pin(pin.strip(), row["pin_hash"], row["pin_salt"]):
         return templates.TemplateResponse(
             request, "login.html", {"error": "Username or PIN not recognised."}
         )
+    if db.needs_rehash(row["pin_hash"]):
+        db.set_pin(username, pin.strip())   # transparent legacy → bcrypt upgrade
     request.session["username"] = username
     return RedirectResponse("/dashboard", status_code=303)
 
@@ -210,9 +221,13 @@ async def api_login(request: Request):
     payload = await request.json()
     username = (payload.get("username") or "").strip().lower()
     pin = (payload.get("pin") or "").strip()
+    if not security.allow_login(security.client_ip(request), username):
+        return JSONResponse({"error": "rate_limited"}, status_code=429)
     row = db.get_crew(username)
     if not row or not db.verify_pin(pin, row["pin_hash"], row["pin_salt"]):
         return JSONResponse({"error": "invalid"}, status_code=401)
+    if db.needs_rehash(row["pin_hash"]):
+        db.set_pin(username, pin)   # transparent legacy → bcrypt upgrade
     request.session["username"] = username
     return {"username": username, "name": row["name"], "ship": row["ship"]}
 
@@ -239,6 +254,8 @@ def api_generate_code(request: Request):
     crew = db.get_crew(username)
     if not crew:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if not security.allow_generate(username):
+        return JSONResponse({"error": "rate_limited"}, status_code=429)
     code = generate_code(crew["ship"])
     db.save_code(code, username)
     row = db.get_code(code)
@@ -315,6 +332,8 @@ def api_family_messages(watch_id: str):
 # ---------------------------------------------------------------------------
 @app.post("/pairing-codes/redeem")
 async def redeem(request: Request):
+    if not security.allow_redeem(security.client_ip(request)):
+        return JSONResponse({"error": "rate_limited"}, status_code=429)
     payload = await request.json()
     code = (payload.get("code") or "").strip().upper()
     watcher_name = (payload.get("watcherName") or "").strip()
