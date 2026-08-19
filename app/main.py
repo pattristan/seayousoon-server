@@ -139,11 +139,27 @@ def dashboard(request: Request):
         "dashboard.html",
         {
             "crew": crew,
+            "ships": SHIPS,
             "codes": codes,
             "qrs": {c["code"]: qr_data_uri(c["code"]) for c in codes},
             "links": db.active_links_for(username),
         },
     )
+
+
+@app.post("/update-contract")
+def update_contract(
+    request: Request,
+    ship: str = Form(...),
+    embark_date: str = Form(...),
+    disembark_date: str = Form(...),
+):
+    """Tours get extended, ships change — followers' apps sync via /api/profile."""
+    username = current_username(request)
+    if not username:
+        return RedirectResponse("/", status_code=303)
+    db.update_crew_contract(username, ship, embark_date, disembark_date)
+    return RedirectResponse("/dashboard", status_code=303)
 
 
 @app.post("/generate-code")
@@ -183,6 +199,115 @@ def redeem_page(request: Request, code: str):
     else:
         status = "valid"
     return templates.TemplateResponse(request, "redeem.html", {"code": code, "status": status})
+
+
+# ---------------------------------------------------------------------------
+# Crew JSON API (consumed by the iOS app's crew mode). Auth = the same
+# session cookie as the website; URLSession persists it between launches.
+# ---------------------------------------------------------------------------
+@app.post("/api/login")
+async def api_login(request: Request):
+    payload = await request.json()
+    username = (payload.get("username") or "").strip().lower()
+    pin = (payload.get("pin") or "").strip()
+    row = db.get_crew(username)
+    if not row or not db.verify_pin(pin, row["pin_hash"], row["pin_salt"]):
+        return JSONResponse({"error": "invalid"}, status_code=401)
+    request.session["username"] = username
+    return {"username": username, "name": row["name"], "ship": row["ship"]}
+
+
+@app.get("/api/followers")
+def api_followers(request: Request):
+    username = current_username(request)
+    if not username:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    links = db.active_links_for(username)
+    return [
+        {"watchId": l["watch_id"], "watcherName": l["watcher_name"], "since": l["created_at"]}
+        for l in links
+    ]
+
+
+@app.post("/api/generate-code")
+def api_generate_code(request: Request):
+    """Mint a single-use pairing code from inside the app (same as the
+    website's button) so crew can invite family without leaving the app."""
+    username = current_username(request)
+    if not username:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    crew = db.get_crew(username)
+    if not crew:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    code = generate_code(crew["ship"])
+    db.save_code(code, username)
+    row = db.get_code(code)
+    return JSONResponse(
+        {"code": code, "expiresAt": row["expires_at"], "link": f"{BASE_URL}/r/{code}"},
+        status_code=201,
+    )
+
+
+@app.post("/api/messages")
+async def api_send_message(request: Request):
+    username = current_username(request)
+    if not username:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    payload = await request.json()
+    watch_id = (payload.get("watchId") or "").strip()
+    body = (payload.get("body") or "").strip()
+    if not body or len(body) > 500:
+        return JSONResponse({"error": "bad_body"}, status_code=400)
+    link = db.get_link(watch_id)
+    if not link or link["username"] != username or not link["active"]:
+        return JSONResponse({"error": "not_your_follower"}, status_code=403)
+    db.create_message(username, watch_id, body)
+    return JSONResponse({"ok": True}, status_code=201)
+
+
+@app.post("/api/revoke")
+async def api_revoke(request: Request):
+    username = current_username(request)
+    if not username:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    payload = await request.json()
+    db.revoke_link((payload.get("watchId") or "").strip(), username)
+    return {"ok": True}
+
+
+@app.get("/api/profile/{watch_id}")
+def api_family_profile(watch_id: str):
+    """Family side: the CURRENT contract (extensions included) for a link.
+    The watchId issued at pairing is the credential, as for messages."""
+    link = db.get_link(watch_id)
+    if not link or not link["active"]:
+        return JSONResponse({"error": "unknown_or_revoked"}, status_code=404)
+    crew = db.get_crew(link["username"])
+    if not crew:
+        return JSONResponse({"error": "unknown"}, status_code=404)
+    return {
+        "crewName": crew["name"],
+        "shipName": crew["ship"],
+        "embarkDate": iso_datetime(crew["embark_date"]),
+        "disembarkDate": iso_datetime(crew["disembark_date"]),
+    }
+
+
+@app.get("/api/messages/{watch_id}")
+def api_family_messages(watch_id: str):
+    """Family side: the watchId (a UUID issued at pairing) is the credential."""
+    link = db.get_link(watch_id)
+    if not link or not link["active"]:
+        return JSONResponse({"error": "unknown_or_revoked"}, status_code=404)
+    crew = db.get_crew(link["username"])
+    msgs = db.messages_for_watch(watch_id)
+    return {
+        "fromName": crew["name"] if crew else "",
+        "messages": [
+            {"id": m["id"], "body": m["body"], "sentAt": m["created_at"]}
+            for m in msgs
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

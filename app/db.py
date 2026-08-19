@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS watch_links (
     created_at   TEXT NOT NULL,
     active       INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id   TEXT NOT NULL REFERENCES watch_links(watch_id),
+    username   TEXT NOT NULL REFERENCES crew(username),
+    body       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -181,3 +189,29 @@ def revoke_link(watch_id, username):
             "UPDATE watch_links SET active = 0 WHERE watch_id = ? AND username = ?",
             (watch_id, username),
         )
+
+
+def get_link(watch_id):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM watch_links WHERE watch_id = ?", (watch_id,)
+        ).fetchone()
+
+
+# ---------------------------------------------------------------------------
+# Messages (one-way: crew -> follower; a message in a bottle, not a chat)
+# ---------------------------------------------------------------------------
+def create_message(username, watch_id, body):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO messages (watch_id, username, body, created_at) VALUES (?,?,?,?)",
+            (watch_id, username, body, now_iso()),
+        )
+
+
+def messages_for_watch(watch_id, limit=20):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM messages WHERE watch_id = ? ORDER BY id DESC LIMIT ?",
+            (watch_id, limit),
+        ).fetchall()

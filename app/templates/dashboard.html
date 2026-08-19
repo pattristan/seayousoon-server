@@ -30,6 +30,28 @@
 </section>
 
 <section class="card">
+    <h2>Your contract</h2>
+    <p class="muted">Tour extended or ship changed? Update it here — your
+       followers' apps adjust automatically.</p>
+    <form method="post" action="/update-contract">
+        <label>Ship
+            <select name="ship" required>
+                {% for ship in ships %}
+                <option value="{{ ship }}" {% if ship == crew["ship"] %}selected{% endif %}>{{ ship }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Embarkation date
+            <input name="embark_date" type="date" value="{{ crew['embark_date'] }}" required>
+        </label>
+        <label>Disembarkation date
+            <input name="disembark_date" type="date" value="{{ crew['disembark_date'] }}" required>
+        </label>
+        <button type="submit">Update contract</button>
+    </form>
+</section>
+
+<section class="card">
     <h2>Who's following you</h2>
     {% if links %}
     <ul class="links">
