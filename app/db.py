@@ -86,6 +86,11 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # Additive migration: the follower's IANA timezone (optional), so crew
+        # composing a message can see the reader's local time.
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(watch_links)")]
+        if "timezone" not in cols:
+            conn.execute("ALTER TABLE watch_links ADD COLUMN timezone TEXT")
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +211,14 @@ def revoke_link(watch_id, username):
         conn.execute(
             "UPDATE watch_links SET active = 0 WHERE watch_id = ? AND username = ?",
             (watch_id, username),
+        )
+
+
+def set_link_timezone(watch_id, timezone):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE watch_links SET timezone = ? WHERE watch_id = ? AND active = 1",
+            (timezone, watch_id),
         )
 
 

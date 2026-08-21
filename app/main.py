@@ -271,7 +271,12 @@ def api_followers(request: Request):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     links = db.active_links_for(username)
     return [
-        {"watchId": l["watch_id"], "watcherName": l["watcher_name"], "since": l["created_at"]}
+        {
+            "watchId": l["watch_id"],
+            "watcherName": l["watcher_name"],
+            "since": l["created_at"],
+            "timezone": l["timezone"],
+        }
         for l in links
     ]
 
@@ -321,6 +326,22 @@ async def api_revoke(request: Request):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     payload = await request.json()
     db.revoke_link((payload.get("watchId") or "").strip(), username)
+    return {"ok": True}
+
+
+@app.post("/api/timezone")
+async def api_set_timezone(request: Request):
+    """Family side: report the device's IANA timezone (watchId = credential),
+    so the seafarer composing a message sees the reader's local time."""
+    payload = await request.json()
+    watch_id = (payload.get("watchId") or "").strip()
+    tz = (payload.get("timezone") or "").strip()
+    link = db.get_link(watch_id)
+    if not link or not link["active"]:
+        return JSONResponse({"error": "unknown_or_revoked"}, status_code=404)
+    if not (0 < len(tz) <= 64) or not all(c.isalnum() or c in "/_+-" for c in tz):
+        return JSONResponse({"error": "bad_timezone"}, status_code=400)
+    db.set_link_timezone(watch_id, tz)
     return {"ok": True}
 
 
