@@ -216,6 +216,31 @@ def redeem_page(request: Request, code: str):
 # Crew JSON API (consumed by the iOS app's crew mode). Auth = the same
 # session cookie as the website; URLSession persists it between launches.
 # ---------------------------------------------------------------------------
+@app.post("/api/register")
+async def api_register(request: Request):
+    """Native in-app registration — same rules as the website form."""
+    if not security.allow_register(security.client_ip(request)):
+        return JSONResponse({"error": "rate_limited"}, status_code=429)
+    payload = await request.json()
+    username = (payload.get("username") or "").strip().lower()
+    name = (payload.get("name") or "").strip()
+    ship = (payload.get("ship") or "").strip()
+    embark = (payload.get("embarkDate") or "").strip()
+    disembark = (payload.get("disembarkDate") or "").strip()
+    pin = (payload.get("pin") or "").strip()
+    if not valid_username(username):
+        return JSONResponse({"error": "bad_username"}, status_code=400)
+    if len(pin) < 4:
+        return JSONResponse({"error": "bad_pin"}, status_code=400)
+    if not name or ship not in SHIPS or not embark or not disembark:
+        return JSONResponse({"error": "bad_fields"}, status_code=400)
+    if db.get_crew(username):
+        return JSONResponse({"error": "username_taken"}, status_code=409)
+    db.create_crew(username, name, ship, embark, disembark, pin)
+    request.session["username"] = username
+    return JSONResponse({"username": username, "name": name, "ship": ship}, status_code=201)
+
+
 @app.post("/api/login")
 async def api_login(request: Request):
     payload = await request.json()
@@ -229,7 +254,14 @@ async def api_login(request: Request):
     if db.needs_rehash(row["pin_hash"]):
         db.set_pin(username, pin)   # transparent legacy → bcrypt upgrade
     request.session["username"] = username
-    return {"username": username, "name": row["name"], "ship": row["ship"]}
+    # Contract dates let a reinstalled app restore crew mode from a bare login.
+    return {
+        "username": username,
+        "name": row["name"],
+        "ship": row["ship"],
+        "embarkDate": iso_datetime(row["embark_date"]),
+        "disembarkDate": iso_datetime(row["disembark_date"]),
+    }
 
 
 @app.get("/api/followers")
